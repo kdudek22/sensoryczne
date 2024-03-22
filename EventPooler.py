@@ -1,32 +1,39 @@
+import multiprocessing
 import requests
 import time
 from ImageDetector import ImageDetector
+from threading import Thread
 
 
 class EventPoller:
-    def __init__(self, pool_wait_time=30):
-        self.pool_wait_time = pool_wait_time
+    def __init__(self, api_url, poll_wait_time=10):
+        self.api_url = api_url
+        self.pool_wait_time = poll_wait_time
         self.pool = False
-        self.classes_to_predict = ["car"]
 
-    def start_pool(self):
+    def start_poller_thread(self):
+        print(f"Starting to pool the api @{self.api_url}")
+        p = Thread(target=self.poll_api)
+        p.start()
+
+    def poll_api(self):
         self.pool = True
+        time.sleep(10)
 
         while self.pool:
             try:
-                req = requests.get("http://127.0.0.1:8000/api/events/")
+                req = requests.get(self.api_url)
                 res = req.json()
                 api_response = res
                 self.update_classes_to_predict(api_response)
 
             except Exception as e:
-                print(f"ERROR IN REQUEST: {e}")
+                print(f"Error while polling: {e}")
 
             time.sleep(self.pool_wait_time)
 
     def update_classes_to_predict(self, new_classes_to_predict):
-        if self.classes_to_predict != new_classes_to_predict:
-            self.classes_to_predict = new_classes_to_predict
+        detector = ImageDetector()
 
-            ImageDetector().update_classes_to_predict(self.classes_to_predict)
-
+        if detector.classes_to_save != new_classes_to_predict:
+            detector.update_classes_to_predict(new_classes_to_predict)
