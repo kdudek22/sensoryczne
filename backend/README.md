@@ -1,5 +1,13 @@
 # This is the backend part of the app
 
+### How to add a video
+
+Currently, there are no endpoints for posting data, you have to do it using the admin panel.
+To do so, run ```python manage.py createsuperuser``` in the folder with the manage.py file.
+Then you have to provide some account details(you do not have to pass a real email). After you have created the account
+open the url ```127.0.0.1:8000/admin``` and login into your account. Then open the videos tab, and create a new instance
+by filling the form, and pressing save.
+
 ## Endpoints
 The base url for the api is 127.0.0.1:8000/api
 
