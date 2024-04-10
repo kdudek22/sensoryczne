@@ -15,7 +15,7 @@ The base url for the api is 127.0.0.1:8000/api
 Response is a list of videos with attributes:
 - id - the id of the record
 - date - timestamp of when the recording was saved
-- detection - the label of the image, right now it`s a string, later we will have to thin about multpile detections in a
+- detection - the label of the image, right now it`s a string, later we will have to thin about multiple detections in a
 single recording etc.
 - video_url - the url at which the video is available, currently its simply hosted on the server
 
