@@ -1,0 +1,15 @@
+
+services:
+  backend:
+    container_name: backend
+    image: backend
+    build:
+      context: ../backend/
+      dockerfile: ../backend/Dockerfile
+
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend/db.sqlite3:/app/db.sqlite3
+      - ../backend/backend/static_files:/app/backend/static_files
