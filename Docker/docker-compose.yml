@@ -1,6 +1,23 @@
+volumes:
+  data:
 
 services:
+  database:
+    container_name: database
+    image: mysql
+    ports:
+      - "3308:3306"
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: yolo_db
+
+    volumes:
+      - data:/var/lib/mysql
+
   backend:
+    depends_on:
+    - database
     container_name: backend
     image: backend
     build:
