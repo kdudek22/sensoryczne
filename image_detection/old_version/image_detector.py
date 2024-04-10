@@ -18,7 +18,7 @@ class ImageDetector:
 
     def __init__(self, video_source="car.mp4", classes_to_save=None):
         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport"
-        self.model = YOLO("../yolov8x.pt")
+        self.model = YOLO("../../yolov8x.pt")
         self.model.to('cuda')
         self.video_source = video_source
         self.frame_buffer = deque(maxlen=MAX_FRAME_BUFFER_COUNT)
