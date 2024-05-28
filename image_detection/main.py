@@ -92,7 +92,7 @@ class ImageDetector:
                     is_saving_frames = False
                     wideo_sink.release_video()
                     shutil.move(self.current_recording_name, "results")
-                    self.send_file_to_api()
+                    self.start_process_of_sending_the_video()
 
             if is_saving_frames:
                 if not saved_buffer:
@@ -148,7 +148,7 @@ class ImageDetector:
         return [(f"#{detections.tracker_id[i]} {detections.class_id[i]} {self.id_to_name[detections.class_id[i]]} "
                  f"{'{:.2f}'.format(detections.confidence[i])}") for i in range(len(detections.tracker_id))]
 
-    def send_file_to_api(self):
+    def start_process_of_sending_the_video(self):
         """This spawns a new process that will upload the recorded video to the api"""
         file_path = f"results/{self.current_recording_name}"
         process = multiprocessing.Process(target=send_file_to_api, args=(file_path,))
