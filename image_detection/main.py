@@ -34,8 +34,8 @@ class CustomVideoSing(sv.VideoSink):
 
 class ImageDetector:
     def __init__(self):
-        self.video_path = "long_zoo.mp4"
-        self.model = YOLO("../../yolov8x.pt")
+        self.video_path = "input_videos/long_zoo.mp4"
+        self.model = YOLO("yolov8x.pt")
         self.model.to('cuda')
 
         # self.interested_classes = {"car", "dog", "carrot", "bird", "sheep"}
