@@ -4,6 +4,9 @@ import numpy as np
 import cv2
 from datetime import datetime
 from collections import deque
+import multiprocessing
+import shutil
+import requests
 
 
 MAX_FRAME_COUNT_BUFFER_SIZE = 120
@@ -11,13 +14,10 @@ FRAME_COUNT_THRESHOLD_FOR_SAVING = 50
 
 
 class CustomVideoSing(sv.VideoSink):
-    def __init__(self, target_path, video_info, codec="mp4v"):
+    def __init__(self, target_path, video_info, codec="h264"):
         super().__init__(target_path, video_info, codec)
-        try:
-            self.__fourcc = cv2.VideoWriter_fourcc(*codec)
-        except TypeError as e:
-            print(str(e) + ". Defaulting to mp4v...")
-            self.__fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+
+        self.__fourcc = cv2.VideoWriter_fourcc(*codec)
         self.writer = cv2.VideoWriter(
             self.target_path,
             self.__fourcc,
@@ -51,19 +51,16 @@ class ImageDetector:
         self.byte_track = sv.ByteTrack(frame_rate=self.video_info.fps, lost_track_buffer=100)
 
         self.frame_buffer = deque(maxlen=FRAME_COUNT_THRESHOLD_FOR_SAVING)
+        self.current_recording_name = None
 
     def predict_on_video(self):
         cap = cv2.VideoCapture(self.video_path)
-
 
         curren_prediction_frame_count = 0
         is_saving_frames = False
         saved_buffer = False
 
-        i=0
         while cap.isOpened():
-            i+=1
-
             ret, frame = cap.read()
             if not ret:
                 break
@@ -85,14 +82,17 @@ class ImageDetector:
                     print("STARTED SAVING FRAMES")
                     is_saving_frames = True
                     saved_buffer = False
-                    file_name = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-                    wideo_sink = CustomVideoSing(target_path=f"{file_name}.mp4", video_info=self.video_info)
+                    file_name = f"{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.mp4"
+                    self.current_recording_name = file_name
+                    wideo_sink = CustomVideoSing(target_path=file_name, video_info=self.video_info)
             else:
                 curren_prediction_frame_count = max(curren_prediction_frame_count - 1, 0)
                 if is_saving_frames and curren_prediction_frame_count == 0:
                     print("STOPPED SAVING FRAMES")
                     is_saving_frames = False
                     wideo_sink.release_video()
+                    shutil.move(self.current_recording_name, "results")
+                    self.send_file_to_api()
 
             if is_saving_frames:
                 if not saved_buffer:
@@ -101,9 +101,6 @@ class ImageDetector:
                         wideo_sink.write_frame(self.frame_buffer[i])
 
                 wideo_sink.write_frame(annotated_frame)
-
-            if i%10 == 0:
-                print(curren_prediction_frame_count)
 
             if cv2.waitKey(20) == ord('q'):
                 break
@@ -119,12 +116,11 @@ class ImageDetector:
     def get_detections_from_results(self, results):
         detections = sv.Detections.from_ultralytics(results)
         detections = self.filter_detections(detections)
-        detections = self.byte_track.update_with_detections(detections=detections)#
+        detections = self.byte_track.update_with_detections(detections=detections)
 
         return detections
 
     def filter_detections(self, detections):
-        """#TODO implement: detections = detections[np.isin(detections.class_id, self.interested_classes_ids)]"""
         return detections[np.isin(detections.class_id, self.interested_classes_ids)]
 
     def get_more_human_detections(self, detections):
@@ -152,7 +148,24 @@ class ImageDetector:
         return [(f"#{detections.tracker_id[i]} {detections.class_id[i]} {self.id_to_name[detections.class_id[i]]} "
                  f"{'{:.2f}'.format(detections.confidence[i])}") for i in range(len(detections.tracker_id))]
 
+    def send_file_to_api(self):
+        """This spawns a new process that will upload the recorded video to the api"""
+        file_path = f"results/{self.current_recording_name}"
+        process = multiprocessing.Process(target=send_file_to_api, args=(file_path,))
+        process.start()
+
+
+def send_file_to_api(file_path):
+    print("SENDING FILE TO API")
+    url = "http://127.0.0.1:8000/api/videos/"
+
+    body = {"detection": "asd"}
+    response = requests.post(url, data=body, files={"video": open(file_path, "rb")})
+
+    print(response.status_code)
+
 
 if __name__ == "__main__":
+    # send_file_to_api("2024_05_27_22_08_03.mp4")
     detector = ImageDetector()
     detector.predict_on_video()
