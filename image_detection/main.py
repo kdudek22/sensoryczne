@@ -59,6 +59,7 @@ class ImageDetector:
         curren_prediction_frame_count = 0
         is_saving_frames = False
         saved_buffer = False
+        wideo_sink = None
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -69,14 +70,14 @@ class ImageDetector:
             results = self.model(frame, verbose=False)[0]
 
             detections = self.get_detections_from_results(results)
-            simpler_detections = self.get_more_human_detections(detections)
+            formatted_detections = self.format_detections(detections)
             annotated_frame = self.add_annotation_to_frame(frame, detections)
 
             self.frame_buffer.append(annotated_frame)
 
             cv2.imshow("f", annotated_frame)
 
-            if simpler_detections:
+            if formatted_detections and not DEBUG_MODE:
                 curren_prediction_frame_count = min(curren_prediction_frame_count + 1, MAX_FRAME_COUNT_BUFFER_SIZE)
                 if not is_saving_frames and curren_prediction_frame_count >= FRAME_COUNT_THRESHOLD_FOR_SAVING:
                     print("STARTED SAVING FRAMES")
@@ -123,7 +124,7 @@ class ImageDetector:
     def filter_detections(self, detections):
         return detections[np.isin(detections.class_id, self.interested_classes_ids)]
 
-    def get_more_human_detections(self, detections):
+    def format_detections(self, detections):
         res = []
         for i in range(len(detections)):
             res.append({"confidence": detections.confidence[i],
@@ -166,5 +167,6 @@ def send_file_to_api(file_path):
 
 
 if __name__ == "__main__":
+    DEBUG_MODE = True
     detector = ImageDetector()
     detector.predict_on_video()
