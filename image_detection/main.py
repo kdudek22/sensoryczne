@@ -166,6 +166,5 @@ def send_file_to_api(file_path):
 
 
 if __name__ == "__main__":
-    # send_file_to_api("2024_05_27_22_08_03.mp4")
     detector = ImageDetector()
     detector.predict_on_video()
