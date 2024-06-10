@@ -15,4 +15,4 @@ class VideoSerializer(serializers.ModelSerializer):
         fields = ["id", "date", "detection", "video_url", "video"]
 
     def get_video_url(self, obj):
-        return f"http://{os.environ.get('SERVER_ADDRESS', '127.0.0.1')}/media/{obj.video}"
+        return f"http://{os.environ.get('SERVER_ADDRESS', '127.0.0.1')}:8000/media/{obj.video}"
