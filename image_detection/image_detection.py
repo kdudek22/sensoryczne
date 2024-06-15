@@ -12,6 +12,7 @@ from shared_utils.broker import BrokerClient
 from shared_utils.logging_config import logger
 import threading
 import json
+import os
 
 MAX_FRAME_COUNT_BUFFER_SIZE = 120
 FRAME_COUNT_THRESHOLD_FOR_SAVING = 50
@@ -45,8 +46,10 @@ class ImageDetector:
         self.model = YOLO("yolov8x.pt")
         self.model.to('cuda')
 
-        self.classes_to_detect = {"car", "dog", "carrot", "bird", "sheep"}
-        # self.interested_classes = {"car", "bird"}
+        os.makedirs("results", exist_ok=True)
+
+        # self.classes_to_detect = {"car", "dog", "carrot", "bird", "sheep"}
+        self.classes_to_detect = {"car", "bird"}
 
         self.id_to_name = self.model.model.names
         self.name_to_id = {self.model.model.names[i]: i for i in self.model.model.names}
@@ -70,6 +73,8 @@ class ImageDetector:
         is_saving_frames = False
         saved_buffer = False
         wideo_sink = None
+
+        logger.info(f"Starting detection, classes_to_detect: {self.classes_to_detect}")
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -135,7 +140,7 @@ class ImageDetector:
         return detections
 
     def filter_detections(self, detections):
-        return detections[np.isin(detections.class_id, self.interested_classes_ids)]
+        return detections[np.isin(detections.class_id, [self.name_to_id[c] for c in self.classes_to_detect])]
 
     def format_detections(self, detections):
         res = []
@@ -172,8 +177,14 @@ class ImageDetector:
         thread = threading.Thread(target=self.predict_on_video)
         thread.start()
 
-    def update_classes_to_detect(self, new_classes_to_detect):
-        self.classes_to_detect = new_classes_to_detect
+    def update_classes_to_detect(self, message: dict):
+        if "classes_to_detect" not in message:
+            logger.info("Message missing classes to detect")
+            return
+
+        old_classes = self.classes_to_detect
+        self.classes_to_detect = set(message['classes_to_detect'])
+        logger.info(f"Updated classes to detect: before {old_classes}, after: {self.classes_to_detect}")
 
     def send_started_detecting_message_to_broker(self):
         logger.info("Sending detection message to broker")
@@ -194,19 +205,27 @@ def send_file_to_api(file_path):
 
     logger.info("Video received by API, status code:" + str(response.status_code))
 
+    logger.info(f"Removing file: {file_path}")
+    os.remove(file_path)
+
 
 if __name__ == "__main__":
     DEBUG_MODE = False
+
     detection_settings_topic = "test/detection_settings"
     detections_topic = "test/detections"
+    broker_address = "localhost"
 
-    broker = BrokerClient("localhost", detection_settings_topic, detections_topic)
+    broker = BrokerClient(broker_address, detection_settings_topic, detections_topic)
 
     detector = ImageDetector()
+    broker.message_received_callback = detector.update_classes_to_detect
     detector.broker_send_message_callback = broker.publish
 
     broker.start_in_thread()
     detector.predict_on_video()
+
+    exit()
 
 
 
