@@ -3,6 +3,8 @@ import time
 from shared_utils.broker import BrokerClient
 from shared_utils.logging_config import logger
 
+
+GPIO.setwarnings(False)
 # Use the BCM numbering
 GPIO.setmode(GPIO.BCM)
 
