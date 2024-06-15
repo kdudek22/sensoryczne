@@ -48,5 +48,6 @@ if __name__ == "__main__":
 
     server_address = "34.116.207.218"
 
-    broker = BrokerClient(server_address, detections_topic, None, message_received_callback=on_message_received)
-    broker.start_in_thread()
+    broker = BrokerClient(server_address, detections_topic, detections_topic, message_received_callback=on_message_received)
+    broker.connect()
+    broker.client.loop_forever()
