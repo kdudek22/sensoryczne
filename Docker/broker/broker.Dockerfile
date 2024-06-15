@@ -2,7 +2,7 @@
 FROM eclipse-mosquitto:latest
 
 # Copy the custom configuration file into the container
-COPY ./config/mosquitto.conf /mosquitto/config/mosquitto.conf
+COPY ./mosquitto.conf /mosquitto/config/mosquitto.conf
 
 # Expose the MQTT port (1883)
 EXPOSE 1883
