@@ -1,0 +1,5 @@
+<div class="flex flex-col items-center gap-5">
+    @for (videoIncident of this.getVideIncidentsList(); track videoIncident) {
+        <app-video-incident [videoIncidentData]=videoIncident></app-video-incident>
+    }
+</div>

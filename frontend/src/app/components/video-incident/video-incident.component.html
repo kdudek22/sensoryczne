@@ -1,0 +1,9 @@
+<div class="rounded-xl shadow-2xl bg-white content-center p-5">
+    <h4 class="text-3xl font-bold mb-3 text-cyan-600">Incydent numer {{videoIncidentData().id}}</h4>
+    <p>Wykryty obiekt: <b>{{videoIncidentData().detection}}</b></p>
+    <p>Data: <b>{{convertDate(videoIncidentData().date)}}</b></p>
+    <p>Godzina: <b>{{convertTime(videoIncidentData().date)}}</b></p>
+    <video class="m-3" controls width="550">
+        <source src="{{videoIncidentData().video_url}}" />
+    </video>
+</div>
