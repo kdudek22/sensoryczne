@@ -208,20 +208,22 @@ class ImageDetector:
                     res.append(entry["name"])
             else:
                 logger.warn(f"Provided class does not exist in the model: {entry['name']}")
+        if not res:
+            logger.warn("There are no classes to detect")
 
         return set(res)
 
 def send_file_to_api(file_path):
-    logger.info("Sending video to api")
-    url = "http://34.116.207.218:8000/api/videos/"
+        logger.info("Sending video to api")
+        url = f"http://{os.environ.get('server_address')}:8000/api/videos/"
 
-    body = {"detection": "pies"}
-    response = requests.post(url, data=body, files={"video": open(file_path, "rb")})
+        body = {"detection": "pies"}
+        response = requests.post(url, data=body, files={"video": open(file_path, "rb")})
 
-    logger.info("Video received by API, status code:" + str(response.status_code))
+        logger.info("Video received by API, status code:" + str(response.status_code))
 
-    logger.info(f"Removing file: {file_path}")
-    os.remove(file_path)
+        logger.info(f"Removing file: {file_path}")
+        os.remove(file_path)
 
 
 if __name__ == "__main__":
@@ -229,7 +231,9 @@ if __name__ == "__main__":
 
     detection_settings_topic = "test/detection_settings"
     detections_topic = "test/detections"
-    server_address = "localhost"
+
+    server_address = "34.116.207.218"
+    os.environ["server_address"] = server_address
 
     broker = BrokerClient(server_address, detection_settings_topic, detections_topic)
 
