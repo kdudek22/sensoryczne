@@ -1,11 +1,17 @@
-from shared_utils.broker import BrokerClient
-from shared_utils.logging_config import logger
+import RPi.GPIO as GPIO
+import time
 
-def on_message_received(message):
-    print(message)
+# Use the BCM numbering
+GPIO.setmode(GPIO.BCM)
 
+# Set up GPIO 17 as an output
+GPIO.setup(17, GPIO.OUT)
 
-if __name__ == "__main__":
-    broker = BrokerClient("localhost", "test/detections", None,
-                          message_received_callback=on_message_received)
-    broker.start_in_thread()
+# Turn on GPIO 17
+GPIO.output(17, GPIO.HIGH)
+
+# Wait for a bit to see the result
+time.sleep(5)
+
+# Clean up GPIO settings
+GPIO.cleanup()
