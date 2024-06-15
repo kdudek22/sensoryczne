@@ -4,7 +4,7 @@ from rest_framework.generics import ListCreateAPIView, ListAPIView,RetrieveUpdat
 
 
 class VideoView(ListCreateAPIView):
-    queryset = VideoModel.objects.all()
+    queryset = VideoModel.objects.all().order_by("-date")
     serializer_class = VideoSerializer
 
 
