@@ -15,7 +15,7 @@ services:
     volumes:
       - data:/var/lib/mysql
 
-  brooker:
+  broker:
     container_name: broker
     build:
       context: ./broker
