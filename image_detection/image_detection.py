@@ -199,7 +199,7 @@ class ImageDetector:
 
     def request_for_classes_to_detect(self):
         logger.info("Sending a request to the api for the classes to detect")
-        response = requests.get("http://localhost:8000/api/classes")
+        response = requests.get(f"http://{server_address}:8000/api/classes")
         data: list[dict] = json.loads(response.text)
         res = []
         for entry in data:
@@ -229,9 +229,9 @@ if __name__ == "__main__":
 
     detection_settings_topic = "test/detection_settings"
     detections_topic = "test/detections"
-    broker_address = "34.116.207.218"
+    server_address = "localhost"
 
-    broker = BrokerClient(broker_address, detection_settings_topic, detections_topic)
+    broker = BrokerClient(server_address, detection_settings_topic, detections_topic)
 
     detector = ImageDetector()
     broker.message_received_callback = detector.update_classes_to_detect
