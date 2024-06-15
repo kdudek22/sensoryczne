@@ -8,9 +8,10 @@ import multiprocessing
 import shutil
 import requests
 import torch
-from brooker import BrokerClient
-from logging_config import logger
+from shared_utils.broker import BrokerClient
+from shared_utils.logging_config import logger
 import threading
+import json
 
 MAX_FRAME_COUNT_BUFFER_SIZE = 120
 FRAME_COUNT_THRESHOLD_FOR_SAVING = 50
@@ -60,6 +61,8 @@ class ImageDetector:
         self.frame_buffer = deque(maxlen=FRAME_COUNT_THRESHOLD_FOR_SAVING)
         self.current_recording_name = None
 
+        self.broker_send_message_callback = None
+
     def predict_on_video(self):
         cap = cv2.VideoCapture(self.video_path)
 
@@ -87,6 +90,7 @@ class ImageDetector:
                 curren_prediction_frame_count = min(curren_prediction_frame_count + 1, MAX_FRAME_COUNT_BUFFER_SIZE)
                 if not is_saving_frames and curren_prediction_frame_count >= FRAME_COUNT_THRESHOLD_FOR_SAVING:
                     logger.info("STARTED SAVING FRAMES")
+                    self.send_started_detecting_message_to_broker()
                     is_saving_frames = True
                     saved_buffer = False
                     file_name = f"{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.mp4"
@@ -96,6 +100,7 @@ class ImageDetector:
                 curren_prediction_frame_count = max(curren_prediction_frame_count - 1, 0)
                 if is_saving_frames and curren_prediction_frame_count == 0:
                     logger.info("STOPPED SAVING FRAMES")
+                    self.send_ended_detecting_message_to_broker()
                     is_saving_frames = False
                     wideo_sink.release_video()
                     shutil.move(self.current_recording_name, "results")
@@ -170,6 +175,16 @@ class ImageDetector:
     def update_classes_to_detect(self, new_classes_to_detect):
         self.classes_to_detect = new_classes_to_detect
 
+    def send_started_detecting_message_to_broker(self):
+        logger.info("Sending detection message to broker")
+        message = json.dumps({"detecting": True})
+        self.broker_send_message_callback(message)
+
+    def send_ended_detecting_message_to_broker(self):
+        logger.info("Sending ended detection message to broker")
+        message = json.dumps({"detecting": False})
+        self.broker_send_message_callback(message)
+
 def send_file_to_api(file_path):
     logger.info("Sending video to api")
     url = "http://34.116.207.218:8000/api/videos/"
@@ -177,17 +192,21 @@ def send_file_to_api(file_path):
     body = {"detection": "pies"}
     response = requests.post(url, data=body, files={"video": open(file_path, "rb")})
 
-    logger.info("Video received by API, status code:" + response.status_code)
+    logger.info("Video received by API, status code:" + str(response.status_code))
 
 
 if __name__ == "__main__":
-    DEBUG_MODE = True
-    broker = BrokerClient("localhost", "test/topic", "test/topic")
+    DEBUG_MODE = False
+    detection_settings_topic = "test/detection_settings"
+    detections_topic = "test/detections"
+
+    broker = BrokerClient("localhost", detection_settings_topic, detections_topic)
 
     detector = ImageDetector()
-    detector.start_in_thread()
+    detector.broker_send_message_callback = broker.publish
 
     broker.start_in_thread()
+    detector.predict_on_video()
 
 
 
