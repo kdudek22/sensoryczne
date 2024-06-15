@@ -46,13 +46,14 @@ class ImageDetector:
         self.model = YOLO("yolov8x.pt")
         self.model.to('cuda')
 
+        self.name_to_id = {self.model.model.names[i]: i for i in self.model.model.names}
+
         os.makedirs("results", exist_ok=True)
 
-        # self.classes_to_detect = {"car", "dog", "carrot", "bird", "sheep"}
-        self.classes_to_detect = {"car", "bird"}
+        self.classes_to_detect = self.request_for_classes_to_detect()
 
         self.id_to_name = self.model.model.names
-        self.name_to_id = {self.model.model.names[i]: i for i in self.model.model.names}
+
         self.interested_classes_ids = [self.name_to_id[name] for name in self.classes_to_detect]
 
         self.video_info = sv.VideoInfo.from_video_path(self.video_path)
@@ -196,6 +197,20 @@ class ImageDetector:
         message = json.dumps({"detecting": False})
         self.broker_send_message_callback(message)
 
+    def request_for_classes_to_detect(self):
+        logger.info("Sending a request to the api for the classes to detect")
+        response = requests.get(f"http://{server_address}:8000/api/classes")
+        data: list[dict] = json.loads(response.text)
+        res = []
+        for entry in data:
+            if entry["name"] in self.name_to_id:
+                if entry["is_active"]:
+                    res.append(entry["name"])
+            else:
+                logger.warn(f"Provided class does not exist in the model: {entry['name']}")
+
+        return set(res)
+
 def send_file_to_api(file_path):
     logger.info("Sending video to api")
     url = "http://34.116.207.218:8000/api/videos/"
@@ -214,9 +229,9 @@ if __name__ == "__main__":
 
     detection_settings_topic = "test/detection_settings"
     detections_topic = "test/detections"
-    broker_address = "localhost"
+    server_address = "localhost"
 
-    broker = BrokerClient(broker_address, detection_settings_topic, detections_topic)
+    broker = BrokerClient(server_address, detection_settings_topic, detections_topic)
 
     detector = ImageDetector()
     broker.message_received_callback = detector.update_classes_to_detect
