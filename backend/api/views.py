@@ -15,9 +15,10 @@ class ClassesToPredictListView(ListAPIView, GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         for entry in request.data:
-            obj = ClassToPredict.objects.get(name=entry["name"])
-            obj.is_active = entry["is_active"]
-            obj.save()
+            if ClassToPredict.objects.filter(name=entry["name"]).exists():
+                obj = ClassToPredict.objects.get(name=entry["name"])
+                obj.is_active = entry["is_active"]
+                obj.save()
 
         return Response(self.serializer_class(ClassToPredict.objects.all(), many=True).data)
 
