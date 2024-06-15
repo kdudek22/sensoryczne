@@ -244,7 +244,4 @@ if __name__ == "__main__":
     broker.start_in_thread()
     detector.predict_on_video()
 
-    exit()
-
-
-
+    broker.client.disconnect()

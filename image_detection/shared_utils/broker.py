@@ -41,7 +41,7 @@ class BrokerClient:
         thread.start()
 
     def start_listening(self):
-        self.client.loop_forever()
+        self.client.loop_start()
 
     def publish(self, message):
         self.client.publish(self.broker_publish_topic, message)
