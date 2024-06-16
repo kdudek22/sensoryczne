@@ -26,7 +26,7 @@ class ClassesToPredictListView(ListAPIView, GenericAPIView):
         broker = BrokerClient("34.116.207.218", "", "test/detection_settings")
         broker.connect()
 
-        broker.publish(json.dumps({"classes_to_predict": active_classes}))
+        broker.publish(json.dumps({"classes_to_detect": active_classes}))
 
         broker.client.disconnect()
 
