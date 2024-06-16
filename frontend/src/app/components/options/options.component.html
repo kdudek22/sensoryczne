@@ -1,16 +1,8 @@
-<div class="container">
-    <h2>Manage Flags</h2>
-    <form (ngSubmit)="onSubmit()">
-        <div formArrayName="flags">
-            @for (flag of flags.controls; track flag) {
-                <div>
-                    <label>
-                        <input type="checkbox" formControlName="value">
-                        {{ flag.value.name }}
-                    </label>
-                </div>
-            }
-        </div>
-        <button type="submit" [disabled]="flagsForm.invalid">Save</button>
-    </form>
+<div class="container flex-col bg-white fixed right-32 min-w-80 w-min p-10 rounded-xl z-30">
+    <h2 class="text-2xl">Manage Flags</h2>
+    <div class="flex flex-col">
+        @for (flag of flagSettingsService.flags(); track flag) {
+            <mat-checkbox class="example-margin" [checked]="flag.is_active" (change)="onSubmit($event, flag)">{{flag.name}}</mat-checkbox>
+        }
+    </div>
 </div>
