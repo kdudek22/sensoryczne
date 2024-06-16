@@ -40,3 +40,15 @@ services:
       - "8000:8000"
     volumes:
       - ../backend/backend/static_files:/app/backend/static_files
+
+  frontend:
+    depends_on:
+      - backend
+    container_name: frontend
+    image: frontend
+    build:
+      context: ../frontend
+      dockerfile: ../frontend/Dockerfile
+    restart: always
+    ports:
+      - "4200:4200"
