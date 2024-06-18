@@ -13,6 +13,7 @@ from shared_utils.logging_config import logger
 import threading
 import json
 import os
+import time
 
 MAX_FRAME_COUNT_BUFFER_SIZE = 120
 FRAME_COUNT_THRESHOLD_FOR_SAVING = 50
@@ -63,9 +64,13 @@ class ImageDetector:
         self.byte_track = sv.ByteTrack(frame_rate=self.video_info.fps, lost_track_buffer=100)
 
         self.frame_buffer = deque(maxlen=FRAME_COUNT_THRESHOLD_FOR_SAVING)
+        self.fps_buffer = deque(maxlen=MAX_FRAME_COUNT_BUFFER_SIZE)
         self.current_recording_name = None
 
         self.broker_send_message_callback = None
+        self.last_time = time.time()
+
+        self.frame_prediction_and_confidence = []
 
     def predict_on_video(self):
         cap = cv2.VideoCapture(self.video_path)
@@ -101,7 +106,7 @@ class ImageDetector:
                     saved_buffer = False
                     file_name = f"{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.mp4"
                     self.current_recording_name = file_name
-                    wideo_sink = CustomVideoSink(target_path=file_name, video_info=self.video_info)
+                    wideo_sink = CustomVideoSink(target_path=file_name, video_info=self.get_video_info(frame))
             else:
                 curren_prediction_frame_count = max(curren_prediction_frame_count - 1, 0)
                 if is_saving_frames and curren_prediction_frame_count == 0:
@@ -111,6 +116,7 @@ class ImageDetector:
                     wideo_sink.release_video()
                     shutil.move(self.current_recording_name, "results")
                     self.start_process_of_sending_the_video()
+                    self.frame_prediction_and_confidence = []
 
             if is_saving_frames:
                 if not saved_buffer:
@@ -118,8 +124,12 @@ class ImageDetector:
                     for i in range(len(self.frame_buffer)):
                         wideo_sink.write_frame(self.frame_buffer[i])
 
+                if formatted_detections:
+                    self.frame_prediction_and_confidence.append(formatted_detections[0])
                 wideo_sink.write_frame(annotated_frame)
 
+            self.fps_buffer.append(self.calculate_fps())
+            self.last_time = time.time()
             if cv2.waitKey(20) == ord('q'):
                 break
 
@@ -128,6 +138,9 @@ class ImageDetector:
 
         cap.release()
         cv2.destroyAllWindows()
+
+    def calculate_fps(self):
+        return 1/(time.time() - self.last_time)
 
     def preprocess_frame(self, frame):
         """#TODO think about preprocessing"""
@@ -150,6 +163,8 @@ class ImageDetector:
                         "class_id": detections.class_id[i],
                         "class_name": self.id_to_name[detections.class_id[i]],
                         "tracker_id": detections.tracker_id[i]})
+
+        res.sort(key=lambda x: x["confidence"], reverse=True)
         return res
 
     def add_annotation_to_frame(self, frame, detections):
@@ -159,8 +174,10 @@ class ImageDetector:
 
         annotated_frame = self.bounding_box_annotator.annotate(scene=annotated_frame, detections=detections)
         annotated_frame = self.label_annotator.annotate(scene=annotated_frame, detections=detections, labels=labels)
-        cv2.putText(annotated_frame, f"Detected objects: {len(labels)}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                    1, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(annotated_frame, f"Detected objects: {len(labels)}", (10, 15), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(annotated_frame, f"fps {self.calculate_fps()}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4, (255, 255, 255), 2, cv2.LINE_AA)
 
         return annotated_frame
 
@@ -171,7 +188,8 @@ class ImageDetector:
     def start_process_of_sending_the_video(self):
         """This spawns a new process that will upload the recorded video to the api"""
         file_path = f"results/{self.current_recording_name}"
-        process = multiprocessing.Process(target=send_file_to_api, args=(file_path,))
+        best_label = self.get_video_label_from_predictions()
+        process = multiprocessing.Process(target=send_file_to_api, args=(file_path, best_label))
         process.start()
 
     def start_in_thread(self):
@@ -213,17 +231,33 @@ class ImageDetector:
 
         return set(res)
 
-def send_file_to_api(file_path):
-        logger.info("Sending video to api")
-        url = f"http://{os.environ.get('server_address')}:8000/api/videos/"
+    def get_video_info(self, frame):
+        width, height, fps = frame.shape[1], frame.shape[0], int(sum(self.fps_buffer)/len(self.fps_buffer))
+        logger.info(f"Video info: h-{height}, w-{width}, fps-{fps} ")
+        return sv.VideoInfo(width=width, height=height, fps=fps)
 
-        body = {"detection": "pies"}
-        response = requests.post(url, data=body, files={"video": open(file_path, "rb")})
+    def get_video_label_from_predictions(self):
+        res = {}
+        for prediction in self.frame_prediction_and_confidence:
+            if prediction["class_name"] in res:
+                res[prediction["class_name"]] += prediction["confidence"]
+            else:
+                res[prediction["class_name"]] = prediction["confidence"]
 
-        logger.info("Video received by API, status code:" + str(response.status_code))
+        return sorted(res.items(), key=lambda p: p[1], reverse=True)[0][0]
 
-        logger.info(f"Removing file: {file_path}")
-        os.remove(file_path)
+
+def send_file_to_api(file_path, label):
+    logger.info(f"Sending video to api, label:  {label}")
+    url = f"http://{os.environ.get('server_address')}:8000/api/videos/"
+
+    body = {"detection": label}
+    response = requests.post(url, data=body, files={"video": open(file_path, "rb")})
+
+    logger.info("Video received by API, status code:" + str(response.status_code))
+
+    logger.info(f"Removing file: {file_path}")
+    os.remove(file_path)
 
 
 if __name__ == "__main__":
