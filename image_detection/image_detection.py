@@ -10,78 +10,61 @@ import requests
 import torch
 from shared_utils.broker import BrokerClient
 from shared_utils.logging_config import logger
-import threading
 import json
 import os
 import time
+from shared_utils.VideoSink import CustomVideoSink
 
 MAX_FRAME_COUNT_BUFFER_SIZE = 120
 FRAME_COUNT_THRESHOLD_FOR_SAVING = 50
 
 
-class CustomVideoSink(sv.VideoSink):
-    def __init__(self, target_path, video_info, codec="avc1"):
-        super().__init__(target_path, video_info, codec)
-
-        self.__fourcc = cv2.VideoWriter_fourcc(*codec)
-        self.writer = cv2.VideoWriter(
-            self.target_path,
-            self.__fourcc,
-            self.video_info.fps,
-            self.video_info.resolution_wh,
-        )
-
-    def write_frame(self, frame: np.ndarray):
-        self.writer.write(frame)
-
-    def release_video(self):
-        self.writer.release()
-
-
 class ImageDetector:
-    def __init__(self):
+
+    def __init__(self, model_path="best2.pt"):
         if not torch.cuda.is_available():
             raise RuntimeError("Cuda needs to be available")
+        self.video_path = "input_videos/sarna.mp4"
 
-        self.video_path = "input_videos/car.mp4"
-        self.model = YOLO("yolov8x.pt")
-        self.model.to('cuda')
+        self.model_path: str = model_path
+        self.model = self.initialize_model()
 
-        self.name_to_id = {self.model.model.names[i]: i for i in self.model.model.names}
+        self.class_name_to_id_map: dict[str, int] = {self.model.model.names[i]: i for i in self.model.model.names}
+        self.id_to_class_name_map: dict[int, str] = self.model.model.names
 
-        os.makedirs("results", exist_ok=True)
+        self.classes_to_detect: set[str] = self.request_for_classes_to_detect()
+        self.classes_to_detect_ids: set[int] = set([self.class_name_to_id_map[name] for name in self.classes_to_detect])
 
-        self.classes_to_detect = self.request_for_classes_to_detect()
-
-        self.id_to_name = self.model.model.names
-
-        self.interested_classes_ids = [self.name_to_id[name] for name in self.classes_to_detect]
-
-        self.video_info = sv.VideoInfo.from_video_path(self.video_path)
-
+        # supervision helpers for tracking and annotating frames
         self.bounding_box_annotator = sv.BoundingBoxAnnotator(thickness=4)
         self.label_annotator = sv.LabelAnnotator()
-        self.byte_track = sv.ByteTrack(frame_rate=self.video_info.fps, lost_track_buffer=100)
+        self.byte_track = sv.ByteTrack(frame_rate=10, lost_track_buffer=100)
 
-        self.frame_buffer = deque(maxlen=FRAME_COUNT_THRESHOLD_FOR_SAVING)
-        self.fps_buffer = deque(maxlen=MAX_FRAME_COUNT_BUFFER_SIZE)
-        self.current_recording_name = None
+        # ques used to store images for detection, and frame rate evaluation
+        self.frame_buffer: deque = deque(maxlen=FRAME_COUNT_THRESHOLD_FOR_SAVING)
+        self.fps_buffer: deque = deque(maxlen=MAX_FRAME_COUNT_BUFFER_SIZE)
+
+        self.last_time: float | None = None
+        self.frame_prediction_and_confidence: list = []
 
         self.broker_send_message_callback = None
-        self.last_time = time.time()
 
-        self.frame_prediction_and_confidence = []
+    def initialize_model(self):
+        model = YOLO(self.model_path)
+        model.to("cuda")
+        return model
 
     def predict_on_video(self):
         cap = cv2.VideoCapture(self.video_path)
 
-        curren_prediction_frame_count = 0
-        is_saving_frames = False
-        saved_buffer = False
+        consecutive_prediction_frame_count: int = 0
+        is_currently_saving_frames: bool = False
+        saved_buffer: bool = False
         wideo_sink = None
+        file_name: str | None = None
+        self.last_time = time.time()
 
         logger.info(f"Starting detection, classes_to_detect: {self.classes_to_detect}")
-
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -95,31 +78,34 @@ class ImageDetector:
 
             self.frame_buffer.append(annotated_frame)
 
-            cv2.imshow("f", annotated_frame)
+            cv2.imshow("predictions", annotated_frame)
 
-            if formatted_detections and not DEBUG_MODE:
-                curren_prediction_frame_count = min(curren_prediction_frame_count + 1, MAX_FRAME_COUNT_BUFFER_SIZE)
-                if not is_saving_frames and curren_prediction_frame_count >= FRAME_COUNT_THRESHOLD_FOR_SAVING:
+            if formatted_detections:
+                consecutive_prediction_frame_count = min(consecutive_prediction_frame_count + 1, MAX_FRAME_COUNT_BUFFER_SIZE)
+                if not is_currently_saving_frames and consecutive_prediction_frame_count >= FRAME_COUNT_THRESHOLD_FOR_SAVING:
+                    """We are starting to save frames because we have been detecting objects for enough frames"""
                     logger.info("STARTED SAVING FRAMES")
                     self.send_started_detecting_message_to_broker()
-                    is_saving_frames = True
+                    is_currently_saving_frames = True
                     saved_buffer = False
                     file_name = f"{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.mp4"
-                    self.current_recording_name = file_name
                     wideo_sink = CustomVideoSink(target_path=file_name, video_info=self.get_video_info(frame))
             else:
-                curren_prediction_frame_count = max(curren_prediction_frame_count - 1, 0)
-                if is_saving_frames and curren_prediction_frame_count == 0:
+                consecutive_prediction_frame_count = max(consecutive_prediction_frame_count - 1, 0)
+                if is_currently_saving_frames and consecutive_prediction_frame_count == 0:
+                    """We are stopping saving frames because we have not been detecting objects for enough frames"""
                     logger.info("STOPPED SAVING FRAMES")
                     self.send_ended_detecting_message_to_broker()
-                    is_saving_frames = False
+                    is_currently_saving_frames = False
                     wideo_sink.release_video()
-                    shutil.move(self.current_recording_name, "results")
-                    self.start_process_of_sending_the_video()
+                    os.makedirs("results", exist_ok=True)
+                    shutil.move(file_name, "results")
+                    self.start_process_to_send_the_video(file_name)
                     self.frame_prediction_and_confidence = []
 
-            if is_saving_frames:
+            if is_currently_saving_frames:
                 if not saved_buffer:
+                    """When we start saving for the first time, we store a buffer of frames that needs to be included"""
                     saved_buffer = True
                     for i in range(len(self.frame_buffer)):
                         wideo_sink.write_frame(self.frame_buffer[i])
@@ -140,6 +126,7 @@ class ImageDetector:
         cv2.destroyAllWindows()
 
     def calculate_fps(self):
+        """Based on the time it takes us to process consequent frames, we have a fps measure that is used for saving"""
         return 1/(time.time() - self.last_time)
 
     def preprocess_frame(self, frame):
@@ -147,33 +134,35 @@ class ImageDetector:
         return frame
 
     def get_detections_from_results(self, results):
+        """This is used to retrieve the detections from the model"""
         detections = sv.Detections.from_ultralytics(results)
         detections = self.filter_detections(detections)
         detections = self.byte_track.update_with_detections(detections=detections)
-
         return detections
 
     def filter_detections(self, detections):
-        return detections[np.isin(detections.class_id, [self.name_to_id[c] for c in self.classes_to_detect])]
+        """Filters detections - only the ones present in the classes to detect are left"""
+        return detections[np.isin(detections.class_id, [self.class_name_to_id_map[c] for c in self.classes_to_detect])]
 
     def format_detections(self, detections):
+        """This pretty much just formats the detections to an easier to work with format"""
         res = []
         for i in range(len(detections)):
             res.append({"confidence": detections.confidence[i],
                         "class_id": detections.class_id[i],
-                        "class_name": self.id_to_name[detections.class_id[i]],
+                        "class_name": self.id_to_class_name_map[detections.class_id[i]],
                         "tracker_id": detections.tracker_id[i]})
 
         res.sort(key=lambda x: x["confidence"], reverse=True)
         return res
 
     def add_annotation_to_frame(self, frame, detections):
+        """We add a detected objects, and  fps info to the frame"""
         labels = self.create_labels_from_detections(detections)
-
         annotated_frame = frame.copy()
-
         annotated_frame = self.bounding_box_annotator.annotate(scene=annotated_frame, detections=detections)
         annotated_frame = self.label_annotator.annotate(scene=annotated_frame, detections=detections, labels=labels)
+
         cv2.putText(annotated_frame, f"Detected objects: {len(labels)}", (10, 15), cv2.FONT_HERSHEY_SIMPLEX,
                     0.4, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.putText(annotated_frame, f"fps {self.calculate_fps()}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
@@ -182,21 +171,20 @@ class ImageDetector:
         return annotated_frame
 
     def create_labels_from_detections(self, detections):
-        return [(f"#{detections.tracker_id[i]} {detections.class_id[i]} {self.id_to_name[detections.class_id[i]]} "
+        """This outputs labels for objects, with the class name, confidence, and the tracker id"""
+        return [(f"#{detections.tracker_id[i]} {detections.class_id[i]}"
+                 f" {self.id_to_class_name_map[detections.class_id[i]]}"
                  f"{'{:.2f}'.format(detections.confidence[i])}") for i in range(len(detections.tracker_id))]
 
-    def start_process_of_sending_the_video(self):
+    def start_process_to_send_the_video(self, file_name):
         """This spawns a new process that will upload the recorded video to the api"""
-        file_path = f"results/{self.current_recording_name}"
+        file_path = f"results/{file_name}"
         best_label = self.get_video_label_from_predictions()
         process = multiprocessing.Process(target=send_file_to_api, args=(file_path, best_label))
         process.start()
 
-    def start_in_thread(self):
-        thread = threading.Thread(target=self.predict_on_video)
-        thread.start()
-
     def update_classes_to_detect(self, message: dict):
+        """This is used by the update the classes by the broker"""
         if "classes_to_detect" not in message:
             logger.info("Message missing classes to detect")
             return
@@ -206,37 +194,42 @@ class ImageDetector:
         logger.info(f"Updated classes to detect: before {old_classes}, after: {self.classes_to_detect}")
 
     def send_started_detecting_message_to_broker(self):
+        """When we start saving frames(detecting) we send a message to the broker indicating the fact"""
         logger.info("Sending detection message to broker")
         message = json.dumps({"detecting": True})
         self.broker_send_message_callback(message)
 
     def send_ended_detecting_message_to_broker(self):
+        """When we stop detecting - we send a message to the broker"""
         logger.info("Sending ended detection message to broker")
         message = json.dumps({"detecting": False})
         self.broker_send_message_callback(message)
 
     def request_for_classes_to_detect(self):
+        """On startup, we send a request to the api to get the configured classes to detect"""
         logger.info("Sending a request to the api for the classes to detect")
         response = requests.get(f"http://{server_address}:8000/api/classes")
         data: list[dict] = json.loads(response.text)
         res = []
         for entry in data:
-            if entry["name"] in self.name_to_id:
+            if entry["name"] in self.class_name_to_id_map:
                 if entry["is_active"]:
                     res.append(entry["name"])
             else:
                 logger.warn(f"Provided class does not exist in the model: {entry['name']}")
         if not res:
             logger.warn("There are no classes to detect")
-
+        # return {"human", "dog", "horse", "hen", "deer"}
         return set(res)
 
     def get_video_info(self, frame):
+        """This is used to get the video info when starting to save the frames"""
         width, height, fps = frame.shape[1], frame.shape[0], int(sum(self.fps_buffer)/len(self.fps_buffer))
         logger.info(f"Video info: h-{height}, w-{width}, fps-{fps} ")
         return sv.VideoInfo(width=width, height=height, fps=fps)
 
     def get_video_label_from_predictions(self):
+        """Returns the best weighted average label from the prediction frames"""
         res = {}
         for prediction in self.frame_prediction_and_confidence:
             if prediction["class_name"] in res:
@@ -265,8 +258,8 @@ if __name__ == "__main__":
 
     detection_settings_topic = "test/detection_settings"
     detections_topic = "test/detections"
-
     server_address = "34.116.207.218"
+
     os.environ["server_address"] = server_address
 
     broker = BrokerClient(server_address, detection_settings_topic, detections_topic)
