@@ -15,16 +15,16 @@ import os
 import time
 from shared_utils.VideoSink import CustomVideoSink
 
-MAX_FRAME_COUNT_BUFFER_SIZE = 120
-FRAME_COUNT_THRESHOLD_FOR_SAVING = 50
+MAX_FRAME_COUNT_BUFFER_SIZE = 30
+FRAME_COUNT_THRESHOLD_FOR_SAVING = 10
 
 
 class ImageDetector:
 
-    def __init__(self, model_path="best2.pt"):
-        if not torch.cuda.is_available():
-            raise RuntimeError("Cuda needs to be available")
-        self.video_path = "input_videos/sarna.mp4"
+    def __init__(self, model_path="/Users/maciejpieniazek/repos/sensoryczne/image_detection/model19_06.pt"):
+        # if not torch.cuda.is_available():
+        #     raise RuntimeError("Cuda needs to be available")
+        self.video_path = 0
 
         self.model_path: str = model_path
         self.model = self.initialize_model()
@@ -51,7 +51,7 @@ class ImageDetector:
 
     def initialize_model(self):
         model = YOLO(self.model_path)
-        model.to("cuda")
+        model.to("cpu")
         return model
 
     def predict_on_video(self):
