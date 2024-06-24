@@ -1,0 +1,23 @@
+names:
+- bear
+- boar
+- cat
+- deer
+- dog
+- eagle
+- fox
+- hedgehog
+- lynx
+- rabbit
+- squirrel
+- wolf
+nc: 12
+roboflow:
+  license: CC BY 4.0
+  project: animals-detection-u94oj
+  url: https://universe.roboflow.com/animals-ggvme/animals-detection-u94oj/dataset/6
+  version: 6
+  workspace: animals-ggvme
+test: test/images
+train: train/images
+val: valid/images
