@@ -31,3 +31,13 @@ Example response:
     }
 ]
 ```
+
+### POST /videos
+This post, saves a video with a detection to the database
+Body:
+```json
+{
+    "detection": "cat",
+    "video": "file.mp4"
+}
+```
