@@ -33,7 +33,7 @@ Example response:
 ```
 
 ### POST /videos
-This post, saves a video with a detection to the database
+This post, saves a video with a detection to the database. When the video is saved it is assigned a unique id, and the timestamp is saved
 Body:
 ```json
 {
